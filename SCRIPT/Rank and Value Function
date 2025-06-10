@@ -1,0 +1,139 @@
+-- rank the orders based on their sales from highest to lowest
+SELECT 
+	OrderID,
+	ProductID,
+	Sales,
+	ROW_NUMBER()OVER(ORDER BY Sales DESC) SalesRank_Row,
+	RANK()OVER(ORDER BY Sales DESC) SalesRank_Rank,
+	DENSE_RANK()OVER(ORDER BY Sales DESC) SalesRank_Dense
+FROM Sales.Orders
+
+
+-- find the top highest sales for each product
+SELECT *
+FROM (
+	SELECT
+		OrderID,
+		ProductID,
+		Sales,
+		ROW_NUMBER()OVER(PARTITION BY ProductID ORDER BY Sales DESC) SalesRankByProduct
+	FROM Sales.Orders
+)T
+WHERE SalesRankByProduct =1
+
+-- Find the lowest 2 customers based on their total sales
+SELECT 
+*
+FROM(
+	SELECT 
+		CustomerID,
+		SUM(Sales)TotalSalesByCustomers,
+		ROW_NUMBER()OVER(ORDER BY(SUM(Sales))) RankCustomers
+	FROM Sales.Orders
+	GROUP BY CustomerID
+) t
+WHERE RankCustomers <= 2
+
+-- Assign unique IDs to the rows of the 'Orders archive' table
+SELECT 
+ROW_NUMBER()OVER(ORDER BY OrderID, OrderDate) ID,
+*
+FROM Sales.OrdersArchive
+
+-- Identify duplicate rows in the table 'Orders Archive'
+-- and return a clean result without any duplicates
+SELECT
+*
+FROM (
+SELECT 
+*,
+ROW_NUMBER()OVER(PARTITION BY OrderID ORDER BY CreationTime DESC) RankByCreationTime
+FROM Sales.OrdersArchive
+)T 
+WHERE RankByCreationTime =1
+
+SELECT
+OrderID,
+Sales,
+NTILE(1)OVER(ORDER BY Sales DESC) OneBucket,
+NTILE(2)OVER(ORDER BY Sales DESC) TwoBucket,
+NTILE(3)OVER(ORDER BY Sales DESC) ThreeBucket,
+NTILE(4)OVER(ORDER BY Sales DESC) FourBucket
+FROM Sales.Orders
+
+-- Segment all orders into 3 categories: high, medium and low sales
+SELECT
+	*,
+	CASE WHEN Category = 1 THEN 'High'
+		 WHEN Category = 2 THEN 'Medium'
+		 ELSE 'Low'
+	END SalesSegnentation
+FROM(
+	SELECT 
+		OrderID,
+		Sales,
+		NTILE(3)OVER(ORDER BY Sales DESC) Category
+	FROM Sales.Orders
+) T
+
+-- In order to export the data, divide the orders into 2 gr oups
+SELECT
+NTILE(2)OVER(ORDER BY OrderID) Buckets, 
+*
+FROM Sales.Orders
+
+-- find the products that fall within the highest 40% of the price
+SELECT
+*,
+CONCAT(DistRank*100, '%') DistRankPerc
+FROM (
+SELECT 
+Product, 
+price,
+CUME_DIST()OVER(ORDER BY Price DESC) DistRank
+FROM Sales.Products
+)T
+WHERE DistRank <=4
+
+-- Analyze the month-over-month performance by finding the percentage change
+-- in sales between the current and previous months
+SELECT
+*,
+CurrentMonthSales-PreviousMonthSales MoM_Change,
+CONCAT(ROUND(CAST((CurrentMonthSales-PreviousMonthSales) AS FLOAT)/PreviousMonthSales*100,1),'%') MoM_Perc
+FROM (
+SELECT
+MONTH(OrderDate) OrderMonth,
+SUM(Sales) CurrentMonthSales,
+LAG(SUM(Sales))OVER(ORDER BY MONTH(OrderDate)) PreviousMonthSales
+FROM Sales.Orders
+GROUP BY MONTH(OrderDate) 
+) T
+
+-- in order to analyze customer loyalty,
+-- rank custoemrs based on the average days between their orders
+SELECT
+CustomerID,
+AVG(DaysUntilNextOrder) AvgDays,
+RANK()OVER(ORDER BY COALESCE(AVG(DaysUntilNextOrder), 99999)) RankAvg
+FROM(
+	SELECT
+	OrderID,
+	CustomerID,
+	OrderDate CurrentOrder,
+	LEAD(OrderDate)OVER(PARTITION BY CustomerID Order by OrderDate) NextOrder,
+	DATEDIFF(day, OrderDate,LEAD(OrderDate)OVER(PARTITION BY CustomerID Order by OrderDate)) DaysUntilNextOrder
+	FROM Sales.Orders
+)T
+GROUP BY
+CustomerID
+
+-- Find the lowest and highest sales for each product
+SELECT
+	OrderID,
+	ProductID,
+	Sales,
+	FIRST_VALUE(Sales)OVER(PARTITION BY ProductID ORDER BY Sales) LowestSales,
+	LAST_VALUE(Sales)OVER(PARTITION BY ProductID ORDER BY Sales ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) HighestSales
+FROM Sales.Orders
+
